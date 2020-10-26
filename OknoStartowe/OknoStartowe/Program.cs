@@ -11,6 +11,8 @@ using iText.Signatures;
 using iText.Kernel.Pdf;
 using iText.IO.Image;
 using iText.Forms.Fields;
+using com.itextpdf;
+using iText.Forms;
 
 namespace OknoStartowe
 {
@@ -47,7 +49,8 @@ namespace OknoStartowe
             {
                 Podpisywanie(Arg[1], Arg[2], Arg[3], float.Parse(Arg[4]));
             }
-            MessageBox.Show("Koniec");
+            //MessageBox.Show("Koniec");
+            return;
             //Application.Run(new Form1());
         }
         public enum Podpis { Projektowal, Sprawdzil, Zatwierdzil }
@@ -108,13 +111,36 @@ namespace OknoStartowe
         }
         public static void Odczyt(string[] ListaSciezek)
         {
-            for (int i = 0; i < ListaSciezek.Length; i++)
-            {
-                PdfReader reader = new PdfReader(ListaSciezek[i]);
-                
+            //OdczytPojedynczegoPDF(ListaSciezek[1]);
+            //string PelnaListaPol = "";
 
-                reader.Close();
+            for (int i = 1; i < ListaSciezek.Length; i++)
+            {
+                string TMP = OdczytPojedynczegoPDF(ListaSciezek[i]);
+                Console.Write(TMP);
+                //PelnaListaPol += TMP + System.Environment.NewLine;
             }
+            //StreamWriter sw = new StreamWriter(Console.OpenStandardOutput());
+            
+        }
+        private static string OdczytPojedynczegoPDF(string SciezkaPDF)
+        {
+            PdfReader reader = new PdfReader(SciezkaPDF);
+            PdfDocument pdfDocument = new PdfDocument(reader);
+            PdfPage pdfPage = pdfDocument.GetPage(1);
+            iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
+            PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
+            IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
+            string DoZwrotu = SciezkaPDF + ";";
+            foreach(KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
+            {
+                if (Element.Value is PdfSignatureFormField)
+                {
+                    DoZwrotu += Element.Value.GetFieldName().ToString() + ";";
+                }
+            }
+            reader.Close();
+            return DoZwrotu;
         }
     }
 }
