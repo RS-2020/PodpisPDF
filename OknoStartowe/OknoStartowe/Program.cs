@@ -82,6 +82,21 @@ namespace OknoStartowe
 
                 string DEST = "H:\\TMP.pdf";
 
+                PdfDocument pdfDocument = new PdfDocument(reader);
+                float PolozenieX = 0;
+                PdfPage pdfPage = pdfDocument.GetFirstPage();
+                iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
+                if (rectangle.GetRight() == 1191)
+                {
+                    PolozenieX = 835;
+                }
+                else
+                {
+                    PolozenieX = 240;
+                }
+                pdfDocument.Close();
+                reader = new PdfReader(SciezkaDoPDF);
+
                 PdfSigner signer = new PdfSigner(reader,
                 new FileStream(DEST, FileMode.Create),
                 new StampingProperties());
@@ -89,9 +104,10 @@ namespace OknoStartowe
                 //pole 2: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-15, 120, 30))
                 //pole 3: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-30, 120, 30))
                 PdfSignatureAppearance appearance = signer.GetSignatureAppearance();
+                
                 appearance.SetReason(PowodPodpisania)
                     .SetPageNumber(1)
-                    .SetPageRect(new iText.Kernel.Geom.Rectangle(240, Wysokosc, 120, 30))
+                    .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200, 30))
                     .SetLocation("Bielsko-Biała");
                 signer.SetFieldName(PowodPodpisania);
 
@@ -102,12 +118,44 @@ namespace OknoStartowe
                 reader.Close();
                 File.Move(SciezkaDoPDF, SciezkaDoPDF + "1");
                 File.Move(DEST, SciezkaDoPDF);
+                ZmianaNaReadOnly(SciezkaDoPDF + "1", false);
                 File.Delete(SciezkaDoPDF + "1");
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message);
+                if (ex.Message == "Field has been already signed.")
+                {
+                    MessageBox.Show($"Dla pliku:\n{SciezkaDoPDF}\nw polu {PowodPodpisania} widnieje już podpis", "Podpis PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show(ex.Message, "Podpis PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
+        }
+        public static bool ZmianaNaReadOnly(string SciezkaDoPliku, bool SetReadOnly)
+        {
+            try
+            {
+                FileAttributes Atrybuty = System.IO.File.GetAttributes(SciezkaDoPliku);
+                if ((Atrybuty & FileAttributes.ReadOnly) != FileAttributes.ReadOnly && SetReadOnly)
+                {
+                    System.IO.File.SetAttributes(SciezkaDoPliku, System.IO.File.GetAttributes(SciezkaDoPliku) | FileAttributes.ReadOnly);
+                    return true;
+                }
+                else if (SetReadOnly == false)
+                {
+                    Atrybuty = RemoveAttribute(Atrybuty, FileAttributes.ReadOnly);
+                    System.IO.File.SetAttributes(SciezkaDoPliku, Atrybuty);
+                    return true;
+                }
+            }
+            catch { return false; }
+            return false;
+        }
+        private static FileAttributes RemoveAttribute(FileAttributes attributes, FileAttributes attributesToRemove)
+        {
+            return attributes & ~attributesToRemove;
         }
         public static void Odczyt(string[] ListaSciezek)
         {
