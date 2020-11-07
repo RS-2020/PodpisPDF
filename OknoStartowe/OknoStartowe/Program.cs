@@ -13,6 +13,10 @@ using iText.IO.Image;
 using iText.Forms.Fields;
 using com.itextpdf;
 using iText.Forms;
+using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
+using System.Security.Permissions;
+using Org.BouncyCastle.Crypto.Parameters;
 
 namespace OknoStartowe
 {
@@ -23,8 +27,9 @@ namespace OknoStartowe
         /// Parametry wejściowe:
         /// 0. Zapis / odczyt
         /// 1. Sciezka do pliku
-        /// 2. hasło do certyfikatu
-        /// 3. rodzaj podpisu: konstr/spr/zatw
+        /// (2). hasło do certyfikatu ---- WYCOFANE
+        /// 2(3). rodzaj podpisu: konstr/spr/zatw
+        /// 3(4) wysokosc polozenia pola podpisu
         /// </summary>
         [STAThread]
         static void Main(string[] Arg)
@@ -47,39 +52,43 @@ namespace OknoStartowe
             }
             else if (Arg[0] == "write")
             {
-                Podpisywanie(Arg[1], Arg[2], Arg[3], float.Parse(Arg[4]));
+                Podpisywanie(Arg[1], Arg[2], float.Parse(Arg[3]));
             }
             //MessageBox.Show("Koniec");
             return;
             //Application.Run(new Form1());
         }
         public enum Podpis { Projektowal, Sprawdzil, Zatwierdzil }
-        public static void Podpisywanie(string SciezkaDoPDF, string Haslo, string PowodPodpisania, float Wysokosc)
+        public static void Podpisywanie(string SciezkaDoPDF, string PowodPodpisania, float Wysokosc)
         {
+            X509Store store = null;
             try
             {
                 PdfReader reader = new PdfReader(SciezkaDoPDF);
-                string Certyfikat = File.ReadAllText(@"H:\LokalizacjaCertyfikatu.txt");
-                char[] Pass = Haslo.ToCharArray();
-                Pkcs12Store pk12 = new Pkcs12Store(new FileStream(Certyfikat, FileMode.Open, FileAccess.Read), Pass);
-                string alias = "";
-                foreach (object a in pk12.Aliases)
+                
+                store = new X509Store(StoreName.My);
+                store.Open(OpenFlags.ReadOnly);
+                X509Certificate2 x509Certificate = null;
+                foreach (var certificate in store.Certificates)
                 {
-                    alias = (string)a;
-                    if (pk12.IsKeyEntry(alias))
+                    TimeSpan timeSpan = certificate.NotAfter - certificate.NotBefore;
+                    if (timeSpan.Days == 365)
                     {
+                        x509Certificate = certificate;
                         break;
                     }
-                }
-                ICipherParameters pk = pk12.GetKey(alias).Key;
-
-                X509CertificateEntry[] ce = pk12.GetCertificateChain(alias);
-                X509Certificate[] chain = new X509Certificate[ce.Length];
-                for (int k = 0; k < ce.Length; ++k)
-                {
-                    chain[k] = ce[k].Certificate;
+                    if (store.Certificates.IndexOf(certificate) == store.Certificates.Count -1 ) { throw new Exception("Nie znaleziono odpowiedniego certyfikatu."); }
                 }
 
+                RSA rSA = x509Certificate.GetRSAPrivateKey();
+                AsymmetricCipherKeyPair akp = Org.BouncyCastle.Security.DotNetUtilities.GetKeyPair(rSA);
+
+                AsymmetricKeyParameter pk_zProvidera = akp.Private;
+
+                Org.BouncyCastle.X509.X509Certificate x509Przekonwertowany = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(x509Certificate);
+
+                Org.BouncyCastle.X509.X509Certificate[] chain = new Org.BouncyCastle.X509.X509Certificate[] {x509Przekonwertowany };
+                
                 string DEST = "H:\\TMP.pdf";
 
                 PdfDocument pdfDocument = new PdfDocument(reader);
@@ -96,30 +105,46 @@ namespace OknoStartowe
                 }
                 pdfDocument.Close();
                 reader = new PdfReader(SciezkaDoPDF);
+                
+                //PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), new StampingProperties() );
+                PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), true);
 
-                PdfSigner signer = new PdfSigner(reader,
-                new FileStream(DEST, FileMode.Create),
-                new StampingProperties());
                 //pole 1: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142, 120, 30))
                 //pole 2: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-15, 120, 30))
                 //pole 3: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-30, 120, 30))
                 PdfSignatureAppearance appearance = signer.GetSignatureAppearance();
-                
+                string Podpisujacy = chain[0].SubjectDN.ToString();
+                string[] RozbityWiersz = Podpisujacy.Split(',');
+                if (RozbityWiersz.Length == 8)
+                {
+                    Podpisujacy = RozbityWiersz[6].Replace("CN=","");
+                }
+
                 appearance.SetReason(PowodPodpisania)
                     .SetPageNumber(1)
                     .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200, 30))
                     .SetLocation("Bielsko-Biała");
                 signer.SetFieldName(PowodPodpisania);
 
-                appearance.SetLayer2Text($"Data: {signer.GetSignDate()} {PowodPodpisania}: {signer.GetSignatureDictionary()} ");
-                IExternalSignature pks = new PrivateKeySignature(pk, DigestAlgorithms.SHA256);
-                signer.SignDetached(pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
+                appearance.SetLayer2Text($"Data: {signer.GetSignDate()} {PowodPodpisania}: {Podpisujacy} ");
+                IExternalSignature pks = new PrivateKeySignature(pk_zProvidera, DigestAlgorithms.SHA512);
 
+                //ICollection<ICrlClient> crlList = new List<ICrlClient> { new CrlClientOnline("") };
+                //ICrlClient crl = new CrlClientOnline(@"");
+
+                //IOcspClient ocsp = new OcspClientBouncyCastle();
+
+                //ICollection<byte[]> TabelaCLR = crlClient.GetEncoded(x509Przekonwertowany, "");
+
+                signer.SignDetached(pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
                 reader.Close();
                 File.Move(SciezkaDoPDF, SciezkaDoPDF + "1");
                 File.Move(DEST, SciezkaDoPDF);
                 ZmianaNaReadOnly(SciezkaDoPDF + "1", false);
                 File.Delete(SciezkaDoPDF + "1");
+
+                string ZebranePodpisy = OdczytPojedynczegoPDF(SciezkaDoPDF);
+                Console.Write(ZebranePodpisy);
             }
             catch (Exception ex)
             {
@@ -131,6 +156,14 @@ namespace OknoStartowe
                 {
                     MessageBox.Show(ex.Message, "Podpis PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+            finally
+            {
+                try
+                {
+                    store.Close();
+                }
+                catch { }
             }
         }
         public static bool ZmianaNaReadOnly(string SciezkaDoPliku, bool SetReadOnly)
@@ -159,35 +192,48 @@ namespace OknoStartowe
         }
         public static void Odczyt(string[] ListaSciezek)
         {
-            //OdczytPojedynczegoPDF(ListaSciezek[1]);
-            //string PelnaListaPol = "";
-
+            string DoZwrotu = "";
             for (int i = 1; i < ListaSciezek.Length; i++)
             {
                 string TMP = OdczytPojedynczegoPDF(ListaSciezek[i]);
-                Console.Write(TMP);
-                //PelnaListaPol += TMP + System.Environment.NewLine;
+                DoZwrotu += TMP;
             }
-            //StreamWriter sw = new StreamWriter(Console.OpenStandardOutput());
-            
+            Console.Write(DoZwrotu);
+
         }
         private static string OdczytPojedynczegoPDF(string SciezkaPDF)
         {
-            PdfReader reader = new PdfReader(SciezkaPDF);
-            PdfDocument pdfDocument = new PdfDocument(reader);
-            PdfPage pdfPage = pdfDocument.GetPage(1);
-            iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
-            PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
-            IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
-            string DoZwrotu = SciezkaPDF + ";";
-            foreach(KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
+            string DoZwrotu = "";
+            PdfReader reader = null;
+            PdfDocument pdfDocument = null;
+            try
             {
-                if (Element.Value is PdfSignatureFormField)
+                DoZwrotu = SciezkaPDF;
+                reader = new PdfReader(SciezkaPDF);
+                pdfDocument = new PdfDocument(reader);
+                PdfPage pdfPage = pdfDocument.GetPage(1);
+                PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
+                IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
+                foreach (KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
                 {
-                    DoZwrotu += Element.Value.GetFieldName().ToString() + ";";
+                    if (Element.Value is PdfSignatureFormField)
+                    {
+                        DoZwrotu += "|" + Element.Value.GetFieldName().ToString();
+                    }
                 }
+                DoZwrotu += ";";
+                reader.Close();
             }
-            reader.Close();
+            catch { DoZwrotu = ""; }
+            finally
+            {
+                try
+                {
+                    reader.Close();
+                    pdfDocument.Close();
+                }
+                catch { }
+            }
             return DoZwrotu;
         }
     }
