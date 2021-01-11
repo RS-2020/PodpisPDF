@@ -1,22 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Pkcs;
-using Org.BouncyCastle.X509;
 using System.IO;
 using iText.Signatures;
 using iText.Kernel.Pdf;
-using iText.IO.Image;
 using iText.Forms.Fields;
-using com.itextpdf;
 using iText.Forms;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
-using System.Security.Permissions;
-using Org.BouncyCastle.Crypto.Parameters;
+using iText.Kernel.Pdf.Annot;
+using iText.Kernel.Pdf.Action;
+using iText.Layout;
+using iText.Layout.Element;
+using iText.Kernel.Font;
+using iText.IO.Font.Constants;
+using iText.IO.Font;
+using iText.StyledXmlParser.Resolver.Font;
+using iText.Kernel.Colors;
+using iText.Kernel.Pdf.Filespec;
 
 namespace OknoStartowe
 {
@@ -36,6 +38,10 @@ namespace OknoStartowe
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            //START_LINKA_TEST();
+            //return;
+
             if (Arg.Length < 2)
             {
                 MessageBox.Show("Zbyt mało parametrów", "Podpisywanie PDF", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
@@ -54,6 +60,10 @@ namespace OknoStartowe
             {
                 Podpisywanie(Arg[1], Arg[2], float.Parse(Arg[3]));
             }
+            else if (Arg[0] == "PDFlink")
+            {
+                dodajLinkaDoPDF(Arg[1], Arg[2]);
+            }
             //MessageBox.Show("Koniec");
             return;
             //Application.Run(new Form1());
@@ -62,6 +72,7 @@ namespace OknoStartowe
         public static void Podpisywanie(string SciezkaDoPDF, string PowodPodpisania, float Wysokosc)
         {
             X509Store store = null;
+            RSA rSA = null;
             try
             {
                 PdfReader reader = new PdfReader(SciezkaDoPDF);
@@ -72,7 +83,7 @@ namespace OknoStartowe
                 foreach (var certificate in store.Certificates)
                 {
                     TimeSpan timeSpan = certificate.NotAfter - certificate.NotBefore;
-                    if (timeSpan.Days == 365)
+                    if (timeSpan.Days == 365 && certificate.Issuer == "CN=WISS-ROOT-CA-ETA1, DC=wiss, DC=com, DC=pl")
                     {
                         x509Certificate = certificate;
                         break;
@@ -80,7 +91,7 @@ namespace OknoStartowe
                     if (store.Certificates.IndexOf(certificate) == store.Certificates.Count -1 ) { throw new Exception("Nie znaleziono odpowiedniego certyfikatu."); }
                 }
 
-                RSA rSA = x509Certificate.GetRSAPrivateKey();
+                rSA = x509Certificate.GetRSAPrivateKey();
                 AsymmetricCipherKeyPair akp = Org.BouncyCastle.Security.DotNetUtilities.GetKeyPair(rSA);
 
                 AsymmetricKeyParameter pk_zProvidera = akp.Private;
@@ -97,18 +108,19 @@ namespace OknoStartowe
                 iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
                 if (rectangle.GetRight() == 1191)
                 {
-                    PolozenieX = 835;
+                    PolozenieX = 835-40;
                 }
                 else
                 {
-                    PolozenieX = 240;
+                    PolozenieX = 240-40;
                 }
                 pdfDocument.Close();
                 reader = new PdfReader(SciezkaDoPDF);
-                
-                //PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), new StampingProperties() );
-                PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), true);
 
+                //PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), new StampingProperties() );
+                //StampingProperties stampingProperties = new StampingProperties();
+                PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), true);
+                //signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create),);
                 //pole 1: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142, 120, 30))
                 //pole 2: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-15, 120, 30))
                 //pole 3: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-30, 120, 30))
@@ -122,7 +134,7 @@ namespace OknoStartowe
 
                 appearance.SetReason(PowodPodpisania)
                     .SetPageNumber(1)
-                    .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200, 30))
+                    .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200+40, 30))
                     .SetLocation("Bielsko-Biała");
                 signer.SetFieldName(PowodPodpisania);
 
@@ -161,6 +173,7 @@ namespace OknoStartowe
             {
                 try
                 {
+                    rSA.Clear();
                     store.Close();
                 }
                 catch { }
@@ -235,6 +248,61 @@ namespace OknoStartowe
                 catch { }
             }
             return DoZwrotu;
+        }
+        private static void START_LINKA_TEST()
+        {
+            string SciezkaPDF = @"H:\PZZA000001.pdf";
+            string SciezkaDoLinka = @"\\alpha2\proalpha\pa-pl-62e00\production\zv\view\PABA000001.pdf";
+            //string SciezkaDoLinka = @"http://portal.wiss.com.pl/handlowy/Lists/Nowy%20indeks/AllItems.aspx";
+            dodajLinkaDoPDF(SciezkaPDF, SciezkaDoLinka);
+        }
+        private static void dodajLinkaDoPDF(string SciezkaPDF, string SciezkaDoLinka)
+        {
+            try
+            {
+                //string TMPdoc = @"H:\TMP.pdf";
+                string TMPdoc = SciezkaPDF + "-";
+                PdfReader reader = new PdfReader(SciezkaPDF);
+                PdfDocument pdfDocSource = new PdfDocument(reader);
+
+                PdfDocument pdfDocument = new PdfDocument(new PdfWriter(TMPdoc));
+                Document layoutDocument = new Document(pdfDocument);
+
+                pdfDocSource.CopyPagesTo(1, pdfDocSource.GetNumberOfPages(), pdfDocument);
+
+                PdfFileSpec spec = PdfFileSpec.CreateExternalFileSpec(pdfDocument, SciezkaDoLinka);
+                PdfAction action = PdfAction.CreateLaunch(spec);
+
+
+                //Paragraph portfolioText = new Paragraph("Kliknij by otworzyć model 3D");
+                Paragraph portfolioText = new Paragraph(new Link("Kliknij by otworzyc model 3D", action));
+                portfolioText.SetFont(PdfFontFactory.CreateFont());
+                portfolioText.SetFontColor(Color.ConvertRgbToCmyk(new DeviceRgb(System.Drawing.Color.Black)));
+                portfolioText.SetFixedLeading(1.1f);
+                portfolioText.SetFirstLineIndent(1f);
+
+                //portfolioText.SetAction(PdfAction.CreateURI(SciezkaDoLinka));
+                layoutDocument.Add(portfolioText);
+                layoutDocument.Close();
+
+                reader.Close();
+                pdfDocSource.Close();
+                pdfDocument.Close();
+
+                try
+                {
+                    File.Delete(SciezkaPDF);
+                }
+                catch (Exception ex)
+                {
+                    File.Move(SciezkaPDF, SciezkaPDF + "_");
+                }
+                File.Move(TMPdoc, SciezkaPDF);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Dodawanie linka", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+            }
         }
     }
 }
