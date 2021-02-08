@@ -19,6 +19,11 @@ using iText.IO.Font;
 using iText.StyledXmlParser.Resolver.Font;
 using iText.Kernel.Colors;
 using iText.Kernel.Pdf.Filespec;
+using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Kernel.Geom;
+using System.Reflection;
+using System.Linq;
 
 namespace OknoStartowe
 {
@@ -40,6 +45,8 @@ namespace OknoStartowe
             Application.SetCompatibleTextRenderingDefault(false);
 
             //START_LINKA_TEST();
+            //TrescPDF(@"E:\PDFOutput-lstoklosa.pdf");
+            //Statystyka.ZPliku();
             //return;
 
             if (Arg.Length < 2)
@@ -64,11 +71,45 @@ namespace OknoStartowe
             {
                 dodajLinkaDoPDF(Arg[1], Arg[2]);
             }
+            else if (Arg[0] == "test")
+            {
+                MessageBox.Show("Udany");
+            }
+            else if (Arg[0] == "split")
+            {
+                TrescPDF(Arg[1]);
+            }
             //MessageBox.Show("Koniec");
             return;
             //Application.Run(new Form1());
         }
         public enum Podpis { Projektowal, Sprawdzil, Zatwierdzil }
+        public static string Sciezka(this string FullFileName)
+        {
+            int i = FullFileName.LastIndexOf(@"\");
+            if (i == -1)
+            {
+                throw new Exception("To nie jest sciezka");
+            }
+            FullFileName = FullFileName.Substring(0, i + 1);
+            return FullFileName;
+        }
+        public static string NazwaPliku(this string FullFileName, bool ZRozszerzeniem)
+        {
+            int i = FullFileName.LastIndexOf(@"\");
+            FullFileName = FullFileName.Substring(i + 1);
+            if (ZRozszerzeniem == true)
+            {
+                return FullFileName;
+            }
+            i = FullFileName.LastIndexOf(".");
+            if (i == -1)
+            {
+                return FullFileName;
+            }
+            FullFileName = FullFileName.Substring(0, i);
+            return FullFileName;
+        }
         public static void Podpisywanie(string SciezkaDoPDF, string PowodPodpisania, float Wysokosc)
         {
             X509Store store = null;
@@ -76,19 +117,23 @@ namespace OknoStartowe
             try
             {
                 PdfReader reader = new PdfReader(SciezkaDoPDF);
-                
+
                 store = new X509Store(StoreName.My);
                 store.Open(OpenFlags.ReadOnly);
                 X509Certificate2 x509Certificate = null;
                 foreach (var certificate in store.Certificates)
                 {
                     TimeSpan timeSpan = certificate.NotAfter - certificate.NotBefore;
+                    //X509ExtensionCollection collection = (X509ExtensionCollection)certificate.Extensions.SyncRoot;
+                    //string TMP = collection[0].Oid.Value;
+                    //MessageBox.Show(TMP);
+
                     if (timeSpan.Days == 365 && certificate.Issuer == "CN=WISS-ROOT-CA-ETA1, DC=wiss, DC=com, DC=pl")
                     {
                         x509Certificate = certificate;
                         break;
                     }
-                    if (store.Certificates.IndexOf(certificate) == store.Certificates.Count -1 ) { throw new Exception("Nie znaleziono odpowiedniego certyfikatu."); }
+                    if (store.Certificates.IndexOf(certificate) == store.Certificates.Count - 1) { throw new Exception("Nie znaleziono odpowiedniego certyfikatu."); }
                 }
 
                 rSA = x509Certificate.GetRSAPrivateKey();
@@ -98,8 +143,8 @@ namespace OknoStartowe
 
                 Org.BouncyCastle.X509.X509Certificate x509Przekonwertowany = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(x509Certificate);
 
-                Org.BouncyCastle.X509.X509Certificate[] chain = new Org.BouncyCastle.X509.X509Certificate[] {x509Przekonwertowany };
-                
+                Org.BouncyCastle.X509.X509Certificate[] chain = new Org.BouncyCastle.X509.X509Certificate[] { x509Przekonwertowany };
+
                 string DEST = "H:\\TMP.pdf";
 
                 PdfDocument pdfDocument = new PdfDocument(reader);
@@ -108,11 +153,11 @@ namespace OknoStartowe
                 iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
                 if (rectangle.GetRight() == 1191)
                 {
-                    PolozenieX = 835-40;
+                    PolozenieX = 835 - 40;
                 }
                 else
                 {
-                    PolozenieX = 240-40;
+                    PolozenieX = 240 - 40;
                 }
                 pdfDocument.Close();
                 reader = new PdfReader(SciezkaDoPDF);
@@ -129,16 +174,17 @@ namespace OknoStartowe
                 string[] RozbityWiersz = Podpisujacy.Split(',');
                 if (RozbityWiersz.Length == 8)
                 {
-                    Podpisujacy = RozbityWiersz[6].Replace("CN=","");
+                    Podpisujacy = RozbityWiersz[6].Replace("CN=", "");
                 }
 
                 appearance.SetReason(PowodPodpisania)
                     .SetPageNumber(1)
-                    .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200+40, 30))
+                    .SetPageRect(new iText.Kernel.Geom.Rectangle(PolozenieX, Wysokosc, 200 + 40, 30))
                     .SetLocation("Bielsko-Biała");
                 signer.SetFieldName(PowodPodpisania);
 
-                appearance.SetLayer2Text($"Data: {signer.GetSignDate()} {PowodPodpisania}: {Podpisujacy} ");
+                appearance.SetLayer2Text($"{PowodPodpisania}: {Podpisujacy} Data: {signer.GetSignDate()}");
+                appearance.SetLayer2FontSize(8);
                 IExternalSignature pks = new PrivateKeySignature(pk_zProvidera, DigestAlgorithms.SHA512);
 
                 //ICollection<ICrlClient> crlList = new List<ICrlClient> { new CrlClientOnline("") };
@@ -251,9 +297,8 @@ namespace OknoStartowe
         }
         private static void START_LINKA_TEST()
         {
-            string SciezkaPDF = @"H:\PZZA000001.pdf";
-            string SciezkaDoLinka = @"\\alpha2\proalpha\pa-pl-62e00\production\zv\view\PABA000001.pdf";
-            //string SciezkaDoLinka = @"http://portal.wiss.com.pl/handlowy/Lists/Nowy%20indeks/AllItems.aspx";
+            string SciezkaPDF = @"H:\PLDR000002.pdf";
+            string SciezkaDoLinka = @"K:\Programowanie\PodpisPDF_github\OknoStartowe\OknoStartowe\bin\Debug\OknoStartowe.exe test";
             dodajLinkaDoPDF(SciezkaPDF, SciezkaDoLinka);
         }
         private static void dodajLinkaDoPDF(string SciezkaPDF, string SciezkaDoLinka)
@@ -304,5 +349,107 @@ namespace OknoStartowe
                 MessageBox.Show(ex.Message, "Dodawanie linka", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
             }
         }
+        private static void TrescPDF(string SciezkaPDF)
+        {
+            PdfReader reader = new PdfReader(SciezkaPDF);
+            PdfDocument pdfDocSource = new PdfDocument(reader);
+            int IlStr = pdfDocSource.GetNumberOfPages();
+            List<string> OdczytaneStrony = new List<string>();
+            List<PdfPage> StrPDF = new List<PdfPage>();
+
+            for (int i = 1; i <= IlStr; i++)
+            {
+                PdfPage page = pdfDocSource.GetPage(i);
+                Rectangle rectangle = page.GetPageSize();
+                string Tresc = page.ExtractText(rectangle)[0];
+                OdczytaneStrony.Add(Tresc);
+                StrPDF.Add(page);
+            }
+            ObrobkaTresci(OdczytaneStrony, StrPDF, pdfDocSource, SciezkaPDF);
+            pdfDocSource.Close();
+            //MessageBox.Show("Koniec");
+        }
+        /// <summary>
+        /// Zadaniem funkcji jest zapisanie plików pdf zakończonych znacznikiem "koniec"
+        /// pod taką samą nazwą należy zapisać też plik TXT zawierający tekst z tych stron
+        /// </summary>
+        /// <param name="OdczytaneStrony"></param>
+        /// <param name="StrPDF"></param>
+        private static void ObrobkaTresci (List<string> OdczytaneStrony, List<PdfPage> StrPDF, PdfDocument pdfDocSource, string FFNpdf)
+        {
+            List<string> PolaczoneStrony = new List<string>();
+            List<int> StronyDoPliku = new List<int>();
+            string NowyKatalog = FFNpdf.Sciezka() + FFNpdf.NazwaPliku(false) + @"\";
+            if (Directory.Exists(NowyKatalog) == false)
+            {
+                Directory.CreateDirectory(NowyKatalog);
+            }
+            for (int i = 0; i <= StrPDF.Count-1; i++)
+            {
+                string TrescStrony = OdczytaneStrony[i];
+                List<string> Rozbity = TrescStrony.Split('\n').ToList();
+                string TMP = Rozbity[Rozbity.Count - 1].Replace("*","").Replace(" ","").ToLower();
+                PolaczoneStrony.AddRange(Rozbity);
+                StronyDoPliku.Add(i);
+                if (TMP.Contains("koniec"))
+                {
+                    //string SciezkaTMP = @"H:\Zlecenie\Skladany_" + i.ToString("000") ;
+                    string SciezkaTMP = NowyKatalog + @"Skladany_" + i.ToString("000");
+                    PdfDocument pdfDocument = new PdfDocument(new PdfWriter(SciezkaTMP + ".pdf"));
+                    pdfDocSource.CopyPagesTo(StronyDoPliku[0]+1, StronyDoPliku[StronyDoPliku.Count - 1]+1, pdfDocument);
+                    pdfDocument.Close();
+                    File.WriteAllLines(SciezkaTMP + ".txt", PolaczoneStrony);
+
+                    PolaczoneStrony.Clear();
+                    StronyDoPliku.Clear();
+                    //utwórz nowy dokument pdf i wkopiuj do niego wszystkie strony z kolekcji StronyDoPliku
+                    //utwórz pod taką samą nazwą plik TXT i zapisz do niego treść PolaczoneStrony
+                    //wyczyść powyższe kolekcje
+                }
+                else
+                {
+                }
+            }
+        }
+    }
+    public static class ReaderExtensions
+    {
+        public static string[] ExtractText(this PdfPage page, params Rectangle[] rects)
+        {
+            var textEventListener = new LocationTextExtractionStrategy();
+            PdfTextExtractor.GetTextFromPage(page, textEventListener);
+            string[] result = new string[rects.Length];
+            for (int i = 0; i < result.Length; i++)
+            {
+                result[i] = textEventListener.GetResultantText(rects[i]);
+            }
+            return result;
+        }
+
+        public static string GetResultantText(this LocationTextExtractionStrategy strategy, Rectangle rect)
+        {
+            IList<TextChunk> locationalResult = (IList<TextChunk>)locationalResultField.GetValue(strategy);
+            List<TextChunk> nonMatching = new List<TextChunk>();
+            foreach (TextChunk chunk in locationalResult)
+            {
+                ITextChunkLocation location = chunk.GetLocation();
+                Vector start = location.GetStartLocation();
+                Vector end = location.GetEndLocation();
+                if (!rect.IntersectsLine(start.Get(Vector.I1), start.Get(Vector.I2), end.Get(Vector.I1), end.Get(Vector.I2)))
+                {
+                    nonMatching.Add(chunk);
+                }
+            }
+            nonMatching.ForEach(c => locationalResult.Remove(c));
+            try
+            {
+                return strategy.GetResultantText();
+            }
+            finally
+            {
+                nonMatching.ForEach(c => locationalResult.Add(c));
+            }
+        }
+        static FieldInfo locationalResultField = typeof(LocationTextExtractionStrategy).GetField("locationalResult", BindingFlags.NonPublic | BindingFlags.Instance);
     }
 }
