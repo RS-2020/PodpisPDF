@@ -79,6 +79,10 @@ namespace OknoStartowe
             {
                 TrescPDF(Arg[1]);
             }
+            else if (Arg[0] == "create")
+            {
+                UtworzPDF.NowyPDF(Arg[1], Arg[2]);
+            }
             //MessageBox.Show("Koniec");
             return;
             //Application.Run(new Form1());
