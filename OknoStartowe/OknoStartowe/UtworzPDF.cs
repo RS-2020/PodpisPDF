@@ -138,7 +138,7 @@ namespace OknoStartowe
                     //float Width = rectangle.GetWidth();
                     table.SetWidth(szerokoscTabeli);
                     Paragraph t1 = new Paragraph($"----------------------------------------------------------------------------------------------------\n" +
-                        $"{rozbity[1]}\t\t\t{rozbity[2]}\t\t\t{rozbity[3]}\n" +
+                        $"{rozbity[1]}\t\t\t{rozbity[2]}\t\t\t{rozbity[3]}\t\t\t{rozbity[4]}\n" +
                         $"----------------------------------------------------------------------------------------------------")
                         .SetFontSize(10)
                         .SetFont(MyFont)
