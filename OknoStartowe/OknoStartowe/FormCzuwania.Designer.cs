@@ -1,6 +1,6 @@
 ﻿namespace OknoStartowe
 {
-    partial class Form1
+    partial class FormCzuwania
     {
         /// <summary>
         /// Wymagana zmienna projektanta.
@@ -28,33 +28,38 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.groupBox1 = new System.Windows.Forms.GroupBox();
+            this.Polaczenie = new System.ComponentModel.BackgroundWorker();
+            this.Odbieranie = new System.ComponentModel.BackgroundWorker();
             this.SuspendLayout();
             // 
-            // groupBox1
+            // Polaczenie
             // 
-            this.groupBox1.Location = new System.Drawing.Point(323, 97);
-            this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(200, 100);
-            this.groupBox1.TabIndex = 0;
-            this.groupBox1.TabStop = false;
-            this.groupBox1.Text = "groupBox1";
+            this.Polaczenie.WorkerSupportsCancellation = true;
+            this.Polaczenie.DoWork += new System.ComponentModel.DoWorkEventHandler(this.Polaczenie_DoWork);
             // 
-            // Form1
+            // Odbieranie
+            // 
+            this.Odbieranie.WorkerSupportsCancellation = true;
+            this.Odbieranie.DoWork += new System.ComponentModel.DoWorkEventHandler(this.Odbieranie_DoWork);
+            // 
+            // FormCzuwania
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(800, 450);
-            this.Controls.Add(this.groupBox1);
-            this.Name = "Form1";
-            this.Text = "Form1";
+            this.ClientSize = new System.Drawing.Size(120, 0);
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.Name = "FormCzuwania";
+            this.Text = "Czuwanie";
+            this.Shown += new System.EventHandler(this.FormCzuwania_Shown);
             this.ResumeLayout(false);
 
         }
 
         #endregion
 
-        private System.Windows.Forms.GroupBox groupBox1;
+        private System.ComponentModel.BackgroundWorker Polaczenie;
+        private System.ComponentModel.BackgroundWorker Odbieranie;
     }
 }
 

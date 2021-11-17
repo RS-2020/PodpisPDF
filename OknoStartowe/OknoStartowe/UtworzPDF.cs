@@ -54,10 +54,11 @@ namespace OknoStartowe
                 .SetFontSize(16)
                 .SetFont(bold)
                 .SetFixedPosition(395+20, 642 - 25-30, 150));
-            document.Add(new Paragraph(TrescPliku[1].ToUpper())
+            int NrZgloszenia = int.Parse(TrescPliku[1]);
+            document.Add(new Paragraph("*" + NrZgloszenia.ToString("00000000") + "*")
                 .SetFontSize(25)
                 .SetFont(KodKreskowy)
-                .SetFixedPosition(395 + 25, 842 - 70, 150));
+                .SetFixedPosition(395 + 25, 842 - 70, 250));
             //PdfTextFormField pdfText = PdfTextFormField.CreateText(pdf, new Rectangle(395 - 20, 642 - 20, 150, 20), "name");
             if (File.Exists(TrescPliku[11]))
             {
@@ -86,7 +87,7 @@ namespace OknoStartowe
                 .SetFont(MyFont)
                 .SetFixedLeading(10)
                 .SetFontSize(10));
-            document.Add(new Paragraph($"Wielkośc produkcji: {TrescPliku[9]} {TrescPliku[10]}")
+            document.Add(new Paragraph($"Wielkość produkcji: {TrescPliku[9]} {TrescPliku[10]}")
                 .SetFont(MyFont)
                 .SetFixedLeading(10)
                 .SetFontSize(10));
@@ -105,9 +106,16 @@ namespace OknoStartowe
                 string[] rozbity = TrescPliku[i].Split('|');
                 if (rozbity[0] == "WYK")
                 {
-                    document.Add(new Paragraph($"{rozbity[1]}\t\t\t{rozbity[2]}\t\t\t{rozbity[3]}")
+                    document.Add(new Paragraph($"{rozbity[1]}\t{rozbity[2]}\t{rozbity[3]}\t\t --->\t\t {rozbity[4]}\t{rozbity[5]}\t{rozbity[6]}")
                         .SetFont(MyFont)
                         .SetFontSize(10));
+                }
+                else if (rozbity[0] == "MWY")
+                {
+                    document.Add(new Paragraph($"{rozbity[1]}\t{rozbity[2]}\t{rozbity[3]}\t\t --->\t\t {rozbity[4]}\t{rozbity[5]}\t{rozbity[6]}")
+                        .SetFont(MyFont)
+                        .SetFixedLeading(2)
+                        .SetFontSize(8));
                 }
                 else
                 {
