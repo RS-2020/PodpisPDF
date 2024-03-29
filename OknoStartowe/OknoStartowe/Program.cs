@@ -24,6 +24,7 @@ using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Geom;
 using System.Reflection;
 using System.Linq;
+using System.Threading;
 
 namespace OknoStartowe
 {
@@ -50,6 +51,11 @@ namespace OknoStartowe
                 UsuwaniePodpisow(Arg);
                 return;
             }
+            else if (Arg.Length == 2 && Arg[0] == "dellink" && File.Exists(Arg[1]))
+            {
+                UsuwanieLinka(Arg[1]);
+                return;
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             ZaczytajUstawienia();
@@ -59,8 +65,13 @@ namespace OknoStartowe
             //return;
             if (Arg.Length == 1 && Arg[0] == "Serwer")
             {
-                Application.Run(new FormCzuwania());
+                Serwer.START();
+                //Application.Run(new FormCzuwania());
                 //uruchom jako serwer i nasluchuj
+            }
+            else if (Arg.Length == 0)
+            {
+                OdczytPodpisow.PodpisanePrzez(@"K:\REPOZYTORIUM\PODZESPOLY\KM\PEKM\PEKM000807.pdf");
             }
             else if (Arg.Length < 2)
             {
@@ -78,7 +89,11 @@ namespace OknoStartowe
             }
             else if (Arg[0] == "write")
             {
-                Podpisywanie(Arg[1], Arg[2], float.Parse(Arg[3]));
+                try { Podpisywanie(Arg[1], Arg[2], float.Parse(Arg[3])); }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
+                }
             }
             else if (Arg[0] == "PDFlink")
             {
@@ -108,6 +123,10 @@ namespace OknoStartowe
             {
                 OdczytPodpisow.PodpisanePrzez(Arg[1]);
             }
+            else if (Arg.Length == 4 && Arg[0] == "PZ")
+            {
+                ProtZmian.UtworzPDF(Arg[1], Arg[2], int.Parse(Arg[3]));
+            }
             //MessageBox.Show("Koniec");
             return;
             //Application.Run(new Form1());
@@ -115,6 +134,7 @@ namespace OknoStartowe
         public enum Podpis { Projektowal, Sprawdzil, Zatwierdzil }
         public static string PlikUstawien = Application.StartupPath + @"\UstawieniaPodpisow.ini";
         public static string NazwaSzablonu = "";
+        public static string Logo = "";
         public static string LogPDF { get; set; } = "";
         public static string Sciezka(this string FullFileName)
         {
@@ -147,13 +167,25 @@ namespace OknoStartowe
             List<string> Ustawienia = File.ReadAllLines(PlikUstawien).ToList();
             LogPDF = Ustawienia[0].Split('|')[1];
             NazwaSzablonu = Ustawienia[1].Split('|')[1];
+            Logo = Ustawienia[2].Split('|')[1];
         }
         public static void Podpisywanie(string SciezkaDoPDF, string PowodPodpisania, float Wysokosc)
         {
+            string ProtokolZmian = "Zatwierdzenie protokołu";
+            string Folder = System.IO.Path.GetDirectoryName(SciezkaDoPDF) + "\\";
+            string NazwaPliku = System.IO.Path.GetFileNameWithoutExtension(SciezkaDoPDF).ToUpper();
+            string Rozszerzenie = System.IO.Path.GetExtension(SciezkaDoPDF);
+            SciezkaDoPDF = Folder + NazwaPliku + Rozszerzenie;
+
             X509Store store = null;
             RSA rSA = null;
             try
             {
+                if (PowodPodpisania != ProtokolZmian && ZweryfikujCzySaPoprzedniePodpisy(SciezkaDoPDF, PowodPodpisania) == false)
+                {
+                    MessageBox.Show($"Brak wcześniejszych podpisów dla {SciezkaDoPDF}", "Podpis PDF (zew)", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    return;
+                }
                 PdfReader reader = new PdfReader(SciezkaDoPDF);
 
                 store = new X509Store(StoreName.My);
@@ -171,21 +203,6 @@ namespace OknoStartowe
                     throw new Exception("Nie znaleziono odpowiedniego certyfikatu.");
                 }
 
-                //foreach (var certificate in store.Certificates)
-                //{
-                //    TimeSpan timeSpan = certificate.NotAfter - certificate.NotBefore;
-                //    //X509ExtensionCollection collection = (X509ExtensionCollection)certificate.Extensions.SyncRoot;
-                //    //string TMP = collection[0].Oid.Value;
-                //    //MessageBox.Show(TMP);
-
-                //    if (timeSpan.Days == 365 && certificate.Issuer == "CN=WISS-ROOT-CA-ETA1, DC=wiss, DC=com, DC=pl")
-                //    {
-                //        x509Certificate = certificate;
-                //        break;
-                //    }
-                //    if (store.Certificates.IndexOf(certificate) == store.Certificates.Count - 1) { throw new Exception("Nie znaleziono odpowiedniego certyfikatu."); }
-                //}
-
                 rSA = x509Certificate.GetRSAPrivateKey();
                 AsymmetricCipherKeyPair akp = Org.BouncyCastle.Security.DotNetUtilities.GetKeyPair(rSA);
 
@@ -201,7 +218,25 @@ namespace OknoStartowe
                 float PolozenieX = 0;
                 PdfPage pdfPage = pdfDocument.GetFirstPage();
                 iText.Kernel.Geom.Rectangle rectangle = pdfPage.GetPageSize();
-                if (rectangle.GetRight() == 1191)
+                
+                pdfDocument.Close();
+                reader = new PdfReader(SciezkaDoPDF);
+                string Calibri = @"C:\Windows\Fonts\Calibri.ttf";
+                PdfFont MyFont = PdfFontFactory.CreateFont(Calibri, "Identity-H");
+                PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), true);
+                //signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create),);
+                //pole 1: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142, 120, 30))
+                //pole 2: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-15, 120, 30))
+                //pole 3: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-30, 120, 30))
+                PdfSignatureAppearance appearance = signer.GetSignatureAppearance();
+                float WlkFonta = 8;
+                if (PowodPodpisania == ProtokolZmian)
+                {
+                    PolozenieX = 185;
+                    WlkFonta = 10;
+                    appearance.SetLayer2Font(MyFont);
+                }
+                else if (rectangle.GetRight() == 1191)
                 {
                     PolozenieX = 835 - 40;
                 }
@@ -209,22 +244,16 @@ namespace OknoStartowe
                 {
                     PolozenieX = 240 - 40;
                 }
-                pdfDocument.Close();
-                reader = new PdfReader(SciezkaDoPDF);
-
-                //PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), new StampingProperties() );
-                //StampingProperties stampingProperties = new StampingProperties();
-                PdfSigner signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create), true);
-                //signer = new PdfSigner(reader, new FileStream(DEST, FileMode.Create),);
-                //pole 1: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142, 120, 30))
-                //pole 2: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-15, 120, 30))
-                //pole 3: .SetPageRect(new iText.Kernel.Geom.Rectangle(240, 142-30, 120, 30))
-                PdfSignatureAppearance appearance = signer.GetSignatureAppearance();
                 string Podpisujacy = chain[0].SubjectDN.ToString();
                 string[] RozbityWiersz = Podpisujacy.Split(',');
-                if (RozbityWiersz.Length == 8)
+                string UserName = Environment.UserName.ToLower();
+                foreach(string El in RozbityWiersz)
                 {
-                    Podpisujacy = RozbityWiersz[6].Replace("CN=", "");
+                    if (El.ToLower().Contains(UserName))
+                    {
+                        Podpisujacy = El.Replace("CN=", "");
+                        break;
+                    }
                 }
 
                 appearance.SetReason(PowodPodpisania)
@@ -233,16 +262,10 @@ namespace OknoStartowe
                     .SetLocation("Bielsko-Biała");
                 signer.SetFieldName(PowodPodpisania);
 
-                appearance.SetLayer2Text($"{PowodPodpisania}: {Podpisujacy} Data: {signer.GetSignDate()}");
-                appearance.SetLayer2FontSize(8);
+                appearance.SetLayer2Text($"{PowodPodpisania}: {Podpisujacy} Data: {signer.GetSignDate().ToString("yyyy-MM-dd HH:mm:ss")}");
+                appearance.SetLayer2FontSize(WlkFonta);
+                
                 IExternalSignature pks = new PrivateKeySignature(pk_zProvidera, DigestAlgorithms.SHA512);
-
-                //ICollection<ICrlClient> crlList = new List<ICrlClient> { new CrlClientOnline("") };
-                //ICrlClient crl = new CrlClientOnline(@"");
-
-                //IOcspClient ocsp = new OcspClientBouncyCastle();
-
-                //ICollection<byte[]> TabelaCLR = crlClient.GetEncoded(x509Przekonwertowany, "");
 
                 signer.SignDetached(pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
                 reader.Close();
@@ -252,7 +275,7 @@ namespace OknoStartowe
                 File.Delete(SciezkaDoPDF + "1");
 
                 string ZebranePodpisy = OdczytPojedynczegoPDF(SciezkaDoPDF);
-                ZapisLogu(SciezkaDoPDF.ToUpper(), ZebranePodpisy);
+                //ZapisLogu(SciezkaDoPDF.ToUpper(), ZebranePodpisy);
                 Console.Write(ZebranePodpisy);
             }
             catch (Exception ex)
@@ -276,8 +299,64 @@ namespace OknoStartowe
                 catch { }
             }
         }
+        /// <summary>
+        /// Zadaniem funkcji jest blokada podpisów "wyższych" jeśli brakuje "niższych" 
+        /// np brak możliwości podpisu "Sprawdzil" jeśli projektujący nie podpisał
+        /// </summary>
+        /// <param name="sciezkaDoPDF"></param>
+        /// <param name="PodpiszJako"></param>
+        /// <returns></returns>
+        private static bool ZweryfikujCzySaPoprzedniePodpisy(string sciezkaDoPDF, string PodpiszJako)
+        {
+            PodpisyPDF podpisyPDF = PodpisyPDF.OdczytPojedynczegoPDF(sciezkaDoPDF);
+            if (podpisyPDF.ListaPodpisow.Contains(PodpiszJako))
+            {
+                throw new Exception($"Podpis {PodpiszJako} został już umieszczony na dokumencie:\n{sciezkaDoPDF}");
+            }
+            if (PodpiszJako == "Projektowal" && podpisyPDF.ListaPodpisow.Count == 0) { return true; }
+            else if (PodpiszJako == "Sprawdzil" && podpisyPDF.ListaPodpisow.Contains("Projektowal") == false)
+            {
+                string Tresc = $"Na pliku PDF {System.IO.Path.GetFileNameWithoutExtension(sciezkaDoPDF)} nie znaleziono podpisu projektującego. Czy na pewno chcesz wykonać podpis?";
+                if (MessageBox.Show(Tresc,"Brak podpisu", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                {
+                    throw new Exception($"Brak podpisu projektujacego (próba podpisu jako sprawdzający):\n{sciezkaDoPDF}");
+                }
+            }
+            else if (PodpiszJako == "Zatwierdzil")
+            {
+                if (podpisyPDF.ListaPodpisow.Contains("Projektowal") == false && podpisyPDF.ListaPodpisow.Contains("Sprawdzil") == false)
+                {
+                    string Tresc = $"Na pliku PDF {System.IO.Path.GetFileNameWithoutExtension(sciezkaDoPDF)} nie znaleziono podpisu sprawdzającego. Czy na pewno chcesz wykonać podpis?";
+                    if (MessageBox.Show(Tresc, "Brak podpisu", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    {
+                        throw new Exception($"Brak podpisu projektujacego i sprawdzającego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                    }
+                    //throw new Exception($"Brak podpisu projektujacego i sprawdzającego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                }
+                else if (podpisyPDF.ListaPodpisow.Contains("Projektowal") == false)
+                {
+                    string Tresc = $"Na pliku PDF {System.IO.Path.GetFileNameWithoutExtension(sciezkaDoPDF)} nie znaleziono podpisu projektującego. Czy na pewno chcesz wykonać podpis?";
+                    if (MessageBox.Show(Tresc, "Brak podpisu", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    {
+                        throw new Exception($"Brak podpisu projektujacego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                    }
+                    //throw new Exception($"Brak podpisu projektujacego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                }
+                else if (podpisyPDF.ListaPodpisow.Contains("Sprawdzil") == false)
+                {
+                    string Tresc = $"Na pliku PDF {System.IO.Path.GetFileNameWithoutExtension(sciezkaDoPDF)} nie znaleziono podpisu sprawdzającego. Czy na pewno chcesz wykonać podpis?";
+                    if (MessageBox.Show(Tresc, "Brak podpisu", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    {
+                        throw new Exception($"Brak podpisu sprawdzającego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                    }
+                    //throw new Exception($"Brak podpisu sprawdzającego (próba podpisu jako zatwierdzający):\n{sciezkaDoPDF}");
+                }
+            }
+            return true;
+        }
         private static void ZapisLogu(string SciezkaPDF, string Wpis)
         {
+            if (Directory.Exists(LogPDF) == false) { return; }
             string NazwaPlikuTXT = SciezkaPDF.NazwaPliku(true).Substring(0, 7) + ".txt";
 
             List<string> TrescPliku = new List<string>();
@@ -290,9 +369,37 @@ namespace OknoStartowe
             {
                 TrescPliku.Remove(E);
             }
-            string NowyWpis = $"{File.GetLastWriteTime(SciezkaPDF)};{Wpis}";
+            TimeSpan Offset = DateTime.Now - DateTime.Now.ToUniversalTime();
+            DateTime LastModTime = File.GetLastWriteTimeUtc(SciezkaPDF) + Offset;
+
+            //string NowyWpis = $"{File.GetLastWriteTime(SciezkaPDF)};{Wpis}";
+            string NowyWpis = $"{LastModTime.ToString("yyyy-MM-dd HH:mm:ss")};{Wpis}";
             TrescPliku.Add(NowyWpis);
-            File.WriteAllLines(LogPDF + NazwaPlikuTXT, TrescPliku);
+            DateTime CzasStart = DateTime.Now;
+            bool Zakoncz = false;
+            string PlikKontrolny = LogPDF + "ZZZZ000.txt";
+            while (Zakoncz == false)
+            {
+                try
+                {
+                    File.WriteAllLines(LogPDF + NazwaPlikuTXT, TrescPliku);
+                    File.WriteAllText(PlikKontrolny, "");
+                    Zakoncz = true;
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(500);
+                    if ((DateTime.Now - CzasStart).TotalSeconds > 5)
+                    {
+                        MessageBox.Show("Wystąpił problem podczas próby zapisu informacji o podpisach. \n" +
+                            "Należy wykonać zrzut ekranu tego komunikatu i przekazać go do R. Strzelczyk.\n" +
+                            $"Czas: {DateTime.Now}\n" +
+                            $"Plik: {SciezkaPDF}", "Podpisywanie PDF - zapis logu", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Zakoncz = true;
+                    }
+                }
+            }
+            
         }
         public static bool ZmianaNaReadOnly(string SciezkaDoPliku, bool SetReadOnly)
         {
@@ -335,40 +442,91 @@ namespace OknoStartowe
         }
         public static string OdczytPojedynczegoPDF(string SciezkaPDF)
         {
-            string DoZwrotu = "";
-            PdfReader reader = null;
-            PdfDocument pdfDocument = null;
-            try
+            return PodpisyPDF.OdczytPojedynczegoPDF(SciezkaPDF).ToString();
+            //string DoZwrotu = "";
+            //PdfReader reader = null;
+            //PdfDocument pdfDocument = null;
+            //try
+            //{
+            //    DoZwrotu = SciezkaPDF;
+            //    reader = new PdfReader(SciezkaPDF);
+            //    pdfDocument = new PdfDocument(reader);
+            //    PdfPage pdfPage = pdfDocument.GetPage(1);
+            //    PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
+            //    IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
+            //    foreach (KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
+            //    {
+            //        if (Element.Value is PdfSignatureFormField)
+            //        {
+            //            DoZwrotu += "|" + Element.Value.GetFieldName().ToString();
+            //        }
+            //    }
+            //    DoZwrotu += ";";
+            //    reader.Close();
+            //}
+            //catch { DoZwrotu = ""; }
+            //finally
+            //{
+            //    try
+            //    {
+            //        reader.Close();
+            //        pdfDocument.Close();
+            //    }
+            //    catch { }
+            //}
+            //return DoZwrotu;
+        }
+        /// <summary>
+        /// Klasa wzraca informacje o podpisach jakie zostały umieszczone na podanym pliku PDF. Zwraca je w postaci kolekcji LIST, gdzie pozycje na liście zawierają "Projektowal", "Sprawdzil", "Zatwierdzil"
+        /// Jeśli któryś podpis nie występuje nie pojawi się też na LIScie
+        /// </summary>
+        public class PodpisyPDF
+        {
+            public string Sciezka { get; set; }
+            public List<string> ListaPodpisow { get; set; } = new List<string>();
+            public override string ToString()
             {
-                DoZwrotu = SciezkaPDF;
-                reader = new PdfReader(SciezkaPDF);
-                pdfDocument = new PdfDocument(reader);
-                PdfPage pdfPage = pdfDocument.GetPage(1);
-                PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
-                IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
-                foreach (KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
+                if (ListaPodpisow.Count == 0) { return ""; }
+                string TMP = Sciezka;
+                foreach(string tmp in ListaPodpisow)
                 {
-                    if (Element.Value is PdfSignatureFormField)
-                    {
-                        DoZwrotu += "|" + Element.Value.GetFieldName().ToString();
-                        //PdfObject TMP = Element.Value.();
-                        string aaa = Element.Value.GetValueAsString();
-                    }
+                    TMP += "|" + tmp;
                 }
-                DoZwrotu += ";";
-                reader.Close();
+                return TMP + ";";
             }
-            catch { DoZwrotu = ""; }
-            finally
+            public static PodpisyPDF OdczytPojedynczegoPDF(string SciezkaPDF)
             {
+                PdfReader reader = null;
+                PdfDocument pdfDocument = null;
+                PodpisyPDF podpisyPDF = new PodpisyPDF { Sciezka = SciezkaPDF };
                 try
                 {
-                    reader.Close();
-                    pdfDocument.Close();
+                    reader = new PdfReader(SciezkaPDF);
+                    pdfDocument = new PdfDocument(reader);
+                    PdfPage pdfPage = pdfDocument.GetPage(1);
+                    PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDocument, false);
+                    IDictionary<string, PdfFormField> PolaNaPDF = form.GetFormFields();
+                    foreach (KeyValuePair<string, PdfFormField> Element in PolaNaPDF)
+                    {
+                        if (Element.Value is PdfSignatureFormField)
+                        {
+                            podpisyPDF.ListaPodpisow.Add(Element.Value.GetFieldName().ToString());
+                        }
+                    }
+                    ZapisLogu(SciezkaPDF.ToUpper(), podpisyPDF.ToString());
                 }
-                catch { }
+                catch {  }
+                finally
+                {
+                    try
+                    {
+                        reader.Close();
+                        pdfDocument.Close();
+                    }
+                    catch { }
+                }
+                return podpisyPDF;
             }
-            return DoZwrotu;
         }
         private static void dodajLinkaDoPDF(string SciezkaPDF, string SciezkaDoLinka)
         {
@@ -387,8 +545,6 @@ namespace OknoStartowe
                 PdfFileSpec spec = PdfFileSpec.CreateExternalFileSpec(pdfDocument, SciezkaDoLinka);
                 PdfAction action = PdfAction.CreateLaunch(spec);
 
-
-                //Paragraph portfolioText = new Paragraph("Kliknij by otworzyć model 3D");
                 Paragraph portfolioText = new Paragraph(new Link("Kliknij by otworzyc model 3D", action));
                 portfolioText.SetFont(PdfFontFactory.CreateFont());
                 portfolioText.SetFontColor(Color.ConvertRgbToCmyk(new DeviceRgb(System.Drawing.Color.Black)));
@@ -513,6 +669,27 @@ namespace OknoStartowe
                 document.Close();
                 pdfDoc.Close();
             }
+        }
+        private static void UsuwanieLinka(string dest)
+        {
+            string PlikDocelowy = dest.Sciezka() + dest.NazwaPliku(false) + "_BP.pdf";
+            PdfWriter pdfWriter = new PdfWriter(PlikDocelowy);
+            PdfDocument pdfDoc = new PdfDocument(new PdfReader(dest), pdfWriter);
+            Document document = new Document(pdfDoc);
+            
+            PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
+
+            form.FlattenFields();
+            PdfPage Strona1 = pdfDoc.GetFirstPage();
+            IList<PdfAnnotation> Lista = Strona1.GetAnnotations();
+            if (Lista.Count > 0 && Lista[0].GetType().Name == "PdfLinkAnnotation")
+            {
+                Strona1.RemoveAnnotation(Lista[0]);
+            }
+            document.Close();
+            pdfDoc.Close();
+            File.Delete(dest);
+            File.Move(PlikDocelowy, dest);
         }
     }
     /// <summary>
